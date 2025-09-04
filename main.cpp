@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iostream>
 #include <pzgmesh.h> //for TPZGeoMesh
+#include "TPZVTKGeoMesh.h"
+
 
 TPZGeoMesh* CreateTriangLShapeMesh(int nel, TPZVec<int>& bcids);
 
@@ -11,9 +13,15 @@ int main(){
     TPZManVector<int, 8> Lshape_bcids(8, -1);
     TPZGeoMesh *gmesh;
     int nelems= 6;
-    gmesh = CreateTriangLShapeMesh(nelems, Lshape_bcids);
-    gmesh->Print();
     
+    gmesh = CreateTriangLShapeMesh(nelems, Lshape_bcids);
+    //gmesh->Print();
+    
+    std::ofstream salida("mallageometrica.txt");
+    gmesh->Print(salida);
+    
+    std::ofstream out("mallarefinada.vtk");
+    TPZVTKGeoMesh::PrintGMeshVTK(gmesh, out);
         
     return 0;
 }
