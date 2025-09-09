@@ -6,23 +6,26 @@
 #include "TPZVTKGeoMesh.h"
 #include "TPZAnalyticSolution.h"
 #include "DarcyFlow/TPZHybridDarcyFlow.h"//I can't invoke only the TPZDarcyFlow class
+#include "TPZLinearAnalysis.h"
+#include "TPZSSpStructMatrix.h"
+
 
 TPZGeoMesh* CreateTriangLShapeMesh(int nel, TPZVec<int>& bcids);
 void UniformRefinement(int nDiv, TPZGeoMesh* gmesh);
-TPZCompMesh* InsertCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int intorder, int porder);
+TPZCompMesh* CreateCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int intorder, int porder);
 
 
 int main(){
     
     int porder = 1;
-    int numinitialref = 0; // Number of refinements to be applied to the initial mesh
+    int nref = 5; // Number of refinements to be applied to the initial mesh
     int nthreads = 0;
     int integrationorder = 11;
     std::string topology = "Triangular"; //Triangular, Quadrilateral
 
-    std::string problemname = "ESinMark";//ESinSin,ESinMark,EConst,EBubble2D,ESteepWave;
+    std::string problemname = "ESinSin";//ESinSin,ESinMark,EConst,EBubble2D,ESteepWave;
     TLaplaceExample1 aux, exact;
-    exact.fExact = aux.ESinMark2;//ESinMark//ESinSin//ESinSinDirNonHom
+    exact.fExact = aux.ESinSin;//ESinMark//ESinSin//ESinSinDirNonHom
 
     // Create geometric mesh
     TPZManVector<int, 8> Lshape_bcids(8, -1);
@@ -37,15 +40,86 @@ int main(){
     std::ofstream out("mallageom.vtk");
     TPZVTKGeoMesh::PrintGMeshVTK(gmesh, out);
     
-    UniformRefinement(numinitialref, gmesh);
+    UniformRefinement(nref, gmesh);
     std::ofstream out2("mallageomrefinada.vtk");
     TPZVTKGeoMesh::PrintGMeshVTK(gmesh, out2);
     
     //Create computational mesh
     TPZCompMesh* cmesh = nullptr;
-    cmesh = InsertCMeshH1(gmesh, &exact, integrationorder, porder);
+    cmesh = CreateCMeshH1(gmesh, &exact, integrationorder, porder);
     std::ofstream out3("mallacomputac.txt");
     cmesh->Print(out3);
+    
+    //Assembly and resolution of the linear system
+    TPZLinearAnalysis an(cmesh);
+    
+    #ifdef PZ_USING_MKL
+        TPZSSpStructMatrix<STATE> strmat(cmesh);
+        strmat.SetNumThreads(0);
+        //strmat.SetDecomposeType(ELDLt);
+    #else
+    //  TPZParFrontStructMatrix<TPZFrontSym<STATE> > strmat(cmeshH1);
+    //  strmat.SetNumThreads(0);
+        TPZSkylineStructMatrix<STATE> strmat(cmeshH1);
+        strmat.SetNumThreads(0);
+    #endif
+    
+    std::set<int> matids={1,-1};
+    strmat.SetMaterialIds(matids);
+    an.SetStructuralMatrix(strmat);
+    TPZStepSolver<STATE> *direct = new TPZStepSolver<STATE>;
+    direct->SetDirect(ELDLt);
+    an.SetSolver(*direct);
+    delete direct;
+    direct = 0;
+    an.Assemble();
+    an.Solve();
+
+    int64_t nelem = cmesh->NElements();
+    cmesh->LoadSolution(cmesh->Solution());
+    cmesh->ExpandSolution();
+    cmesh->ElementSolution().Redim(nelem, 10);
+    
+    TPZManVector<REAL,3> error;
+    std::ofstream anPostProcessFile("postprocess.txt");
+    an.PostProcess(error,anPostProcessFile);
+    
+    //cmesh->Solution().Print("Solution");
+    
+    std::cout << "NDofs: " << cmesh->NEquations() << '\n';
+    std::cout << "\nApproximation error:\n";
+    std::cout << "H1 Norm = " << error[0]<<'\n';
+    std::cout << "L2 Norm = " << error[1]<<'\n';
+    std::cout << "H1 Seminorm = " << error[2] << "\n\n";
+    
+    //Log approximation errors in a file
+    std::ofstream fileouput;
+
+    fileouput.open("TrueErrors.txt",std::ios::app);
+    fileouput << std::setw(15) <<"Problem name" << std::setw(15)<<"p-order" << std::setw(15) <<"DOF's" <<std::setw(15) <<"H1-error" << std::setw(15)<< "L2-error" <<std::setw(15) << "L2-seminorm" << std::endl;
+
+    fileouput << std::setw(15) << problemname;
+    fileouput << std::setw(15) << porder;
+    fileouput << std::setw(15) << cmesh->NEquations();
+    fileouput << std::setw(15) << error[0]; // H1-norm
+    fileouput << std::setw(15) << error[1]; // L2-norm
+    fileouput << std::setw(15) << error[2] << std::endl; // L2-seminorm
+    fileouput.close();
+    
+    
+    TPZStack<std::string> scalnames, vecnames;
+    scalnames.Push("Solution");
+    vecnames.Push("Derivative");
+    vecnames.Push("Flux");
+    scalnames.Push("ExactSolution");
+    vecnames.Push("ExactFlux");
+    int dim = cmesh->Reference()->Dimension();
+    
+    std::string plotname="poissonSolution.vtk";
+    int resolution = 3;
+    an.DefineGraphMesh(dim, scalnames, vecnames, plotname);
+    an.PostProcess(resolution,dim);
+    
     return 0;
 }
 
@@ -168,7 +242,7 @@ void UniformRefinement(int nDiv, TPZGeoMesh* gmesh) {
 }
 
 
-TPZCompMesh* InsertCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int intorder, int porder) {
+TPZCompMesh* CreateCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int intorder, int porder) {
 
     TPZCompMesh* cmesh = new TPZCompMesh(geomesh);
     TPZDarcyFlow* mat = 0;
