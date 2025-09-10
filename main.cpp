@@ -8,9 +8,11 @@
 #include "DarcyFlow/TPZHybridDarcyFlow.h"//I can't invoke only the TPZDarcyFlow class
 #include "TPZLinearAnalysis.h"
 #include "TPZSSpStructMatrix.h"
+#include "pzgeoquad.h"
+#include "tpzgeoelrefpattern.h"
 
-
-TPZGeoMesh* CreateTriangLShapeMesh(int nel, TPZVec<int>& bcids);
+TPZGeoMesh* CreateQuadLShapeMesh(TPZVec<int>& bcids);
+TPZGeoMesh* CreateTriangLShapeMesh(TPZVec<int>& bcids);
 void UniformRefinement(int nDiv, TPZGeoMesh* gmesh);
 TPZCompMesh* CreateCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int intorder, int porder);
 
@@ -18,10 +20,10 @@ TPZCompMesh* CreateCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int i
 int main(){
     
     int porder = 1;
-    int nref = 5; // Number of refinements to be applied to the initial mesh
+    int nref = 4; // Number of refinements to be applied to the initial mesh
     int nthreads = 0;
     int integrationorder = 11;
-    std::string topology = "Triangular"; //Triangular, Quadrilateral
+    std::string topology = "Quadrilateral"; //Triangular, Quadrilateral
 
     std::string problemname = "ESinSin";//ESinSin,ESinMark,EConst,EBubble2D,ESteepWave;
     TLaplaceExample1 aux, exact;
@@ -30,9 +32,16 @@ int main(){
     // Create geometric mesh
     TPZManVector<int, 8> Lshape_bcids(8, -1);
     TPZGeoMesh *gmesh = nullptr;
-    int nelems= 6;
-    gmesh = CreateTriangLShapeMesh(nelems, Lshape_bcids);
+    
+    if (topology == "Quadrilateral"){
+    gmesh = CreateQuadLShapeMesh(Lshape_bcids);
     //gmesh->Print();
+    }
+    
+    if (topology == "Triangular"){
+    gmesh = CreateTriangLShapeMesh(Lshape_bcids);
+    //gmesh->Print();
+    }
     
     std::ofstream salida("mallageometrica.txt");
     gmesh->Print(salida);
@@ -123,7 +132,63 @@ int main(){
     return 0;
 }
 
-TPZGeoMesh* CreateTriangLShapeMesh(int nel, TPZVec<int>& bcids){
+
+TPZGeoMesh* CreateQuadLShapeMesh(TPZVec<int>& bcids) {
+
+    TPZGeoMesh* gmesh = new TPZGeoMesh();
+    gmesh->SetDimension(2);
+    int matID = 1;
+
+    // Creates matrix with node coordinates
+    const int NodeNumber = 8;
+    REAL coordinates[NodeNumber][3] = {
+            {0.,  0., 0.},
+            {1.,  0., 0.},
+            {1.,  1., 0.},
+            {0.,  1., 0.},
+            {-1., 1., 0.},
+            {-1., 0., 0.},
+            {-1.,-1., 0.},
+            {0., -1., 0.}
+    };
+
+    // Inserts coordinates in the TPZGeoMesh object
+    for (int i = 0; i < NodeNumber; i++) {
+        int64_t nodeID = gmesh->NodeVec().AllocateNewElement();
+
+        TPZVec<REAL> nodeCoord(3);
+        nodeCoord[0] = coordinates[i][0];
+        nodeCoord[1] = coordinates[i][1];
+        nodeCoord[2] = coordinates[i][2];
+
+        gmesh->NodeVec()[nodeID] = TPZGeoNode(i, nodeCoord, *gmesh);
+    }
+
+    // Creates 2D elements
+    TPZManVector<int64_t> nodeIDs(4);
+    for (int i = 0; i < 3; i++) {
+        nodeIDs[0] = 0;
+        nodeIDs[1] = (2 * i + 1) % NodeNumber;
+        nodeIDs[2] = (2 * i + 2) % NodeNumber;
+        nodeIDs[3] = (2 * i + 3) % NodeNumber;
+        new TPZGeoElRefPattern<pzgeom::TPZGeoQuad>(nodeIDs, matID, *gmesh);
+    }
+
+    // Creates line elements where boundary conditions will be inserted
+    nodeIDs.Resize(2);
+    for (int i = 0; i < NodeNumber; i++) {
+        nodeIDs[0] = i % NodeNumber;
+        nodeIDs[1] = (i + 1) % NodeNumber;
+        new TPZGeoElRefPattern<pzgeom::TPZGeoLinear>(nodeIDs, bcids[i], *gmesh);
+    }
+
+    gmesh->BuildConnectivity();
+
+    return gmesh;
+
+}
+
+TPZGeoMesh* CreateTriangLShapeMesh(TPZVec<int>& bcids){
     
     TPZGeoMesh* gmesh = new TPZGeoMesh();
     gmesh->SetDimension(2);
@@ -154,7 +219,7 @@ TPZGeoMesh* CreateTriangLShapeMesh(int nel, TPZVec<int>& bcids){
         gmesh->NodeVec()[nodeID] = TPZGeoNode(i, nodeCoord, *gmesh);
     }
     
-    // Creates quadrilateral element.
+    // Creates triangular elements.
     int64_t index =0;
     TPZManVector<int64_t> nodeIDs(3);
     //El 0
