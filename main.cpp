@@ -19,7 +19,7 @@ TPZCompMesh* CreateCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int i
 
 int main(){
     
-    int porder = 1;
+    int porder = 2;
     int nref = 4; // Number of refinements to be applied to the initial mesh
     int nthreads = 0;
     int integrationorder = 11;
@@ -105,9 +105,10 @@ int main(){
     std::ofstream fileouput;
 
     fileouput.open("TrueErrors.txt",std::ios::app);
-    fileouput << std::setw(15) <<"Problem name" << std::setw(15)<<"p-order" << std::setw(15) <<"DOF's" <<std::setw(15) <<"H1-error" << std::setw(15)<< "L2-error" <<std::setw(15) << "L2-seminorm" << std::endl;
+    fileouput << std::setw(15) <<"Problem name" << std::setw(15) <<"Topology" << std::setw(15)<<"p-order" << std::setw(15) <<"DOF's" <<std::setw(15) <<"H1-error" << std::setw(15)<< "L2-error" <<std::setw(15) << "L2-seminorm" << std::endl;
 
     fileouput << std::setw(15) << problemname;
+    fileouput << std::setw(15) << topology;
     fileouput << std::setw(15) << porder;
     fileouput << std::setw(15) << cmesh->NEquations();
     fileouput << std::setw(15) << error[0]; // H1-norm
