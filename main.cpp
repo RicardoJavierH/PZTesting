@@ -10,17 +10,21 @@
 #include "TPZSSpStructMatrix.h"
 #include "pzgeoquad.h"
 #include "tpzgeoelrefpattern.h"
+#include "TPZGenGrid2D.h"
+//#include "pzskylstrmatrix.h"
 
 TPZGeoMesh* CreateQuadLShapeMesh(TPZVec<int>& bcids);
 TPZGeoMesh* CreateTriangLShapeMesh(TPZVec<int>& bcids);
+TPZGeoMesh* CreateGeoMesh(TPZVec<int>& bcids, MMeshType elemtype);
+
 void UniformRefinement(int nDiv, TPZGeoMesh* gmesh);
 TPZCompMesh* CreateCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int intorder, int porder);
 
 
 int main(){
     
-    int porder = 1;
-    int nref = 4; // Number of refinements to be applied to the initial mesh
+    int porder = 3;
+    int nref = 7; // Number of refinements to be applied to the initial mesh
     int nthreads = 0;
     int integrationorder = 11;
     std::string topology = "Quadrilateral"; //Triangular, Quadrilateral
@@ -30,19 +34,29 @@ int main(){
     exact.fExact = aux.ESinSin;//ESinMark//ESinSin//ESinSinDirNonHom
 
     // Create geometric mesh
-    TPZManVector<int, 8> Lshape_bcids(8, -1);
+    bool quadShapeDomain = true;
     TPZGeoMesh *gmesh = nullptr;
     
-    if (topology == "Quadrilateral"){
-    gmesh = CreateQuadLShapeMesh(Lshape_bcids);
-    //gmesh->Print();
+    if ( quadShapeDomain){
+        TPZManVector<int, 4> QuadShape_bcids(4, -1);
+        if (topology == "Quadrilateral"){
+            MMeshType eltype = MMeshType::EQuadrilateral;
+            gmesh = CreateGeoMesh(QuadShape_bcids, eltype);
+        }
+        if (topology == "Triangular"){
+            MMeshType eltype = MMeshType::ETriangular;
+            gmesh = CreateGeoMesh(QuadShape_bcids, eltype);
+        }
     }
-    
-    if (topology == "Triangular"){
-    gmesh = CreateTriangLShapeMesh(Lshape_bcids);
-    //gmesh->Print();
+    else {
+        TPZManVector<int, 8> Lshape_bcids(8, -1);
+        if (topology=="Quadrilateral")
+            gmesh = CreateQuadLShapeMesh(Lshape_bcids);
+        if (topology == "Triangular")
+            gmesh = CreateTriangLShapeMesh(Lshape_bcids);
     }
-    
+    //gmesh->Print();
+        
     std::ofstream salida("mallageometrica.txt");
     gmesh->Print(salida);
     
@@ -115,7 +129,7 @@ int main(){
     fileouput << std::setw(15) << error[2] << std::endl; // L2-seminorm
     fileouput.close();
     
-    
+    /*
     TPZStack<std::string> scalnames, vecnames;
     scalnames.Push("Solution");
     vecnames.Push("Derivative");
@@ -128,10 +142,39 @@ int main(){
     int resolution = 3;
     an.DefineGraphMesh(dim, scalnames, vecnames, plotname);
     an.PostProcess(resolution,dim);
-    
+    */
     return 0;
 }
 
+TPZGeoMesh* CreateGeoMesh(TPZVec<int>& bcids, MMeshType elemtype) {
+        int nel = 2;
+        TPZManVector<int> nx(2, nel);
+        TPZManVector<REAL> x0(3, 0.), x1(3, 1.);
+        bool isOriginCentered = 1;
+        if(isOriginCentered == 1){
+            x0[0]= x0[1] = -1;
+        }
+        x1[2] = x0[2] = 0.;
+
+        TPZGenGrid2D gen(nx, x0, x1, 1, 0);
+        MMeshType eltype = elemtype;
+        //MMeshType eltype = MMeshType::EQuadrilateral;
+        
+        gen.SetElementType(eltype);
+
+        //TPZGenGrid2D gen(nx, x0, x1);
+        gen.SetRefpatternElements(true);
+        TPZGeoMesh* gmesh = new TPZGeoMesh;
+        gen.Read(gmesh);
+        gen.SetBC(gmesh, 4, bcids[0]);
+        gen.SetBC(gmesh, 5, bcids[1]);
+        gen.SetBC(gmesh, 6, bcids[2]);
+        gen.SetBC(gmesh, 7, bcids[3]);
+
+        gmesh->SetDimension(2);
+        return gmesh;
+    
+}
 
 TPZGeoMesh* CreateQuadLShapeMesh(TPZVec<int>& bcids) {
 
@@ -333,13 +376,11 @@ TPZCompMesh* CreateCMeshH1(TPZGeoMesh* geomesh,TLaplaceExample1* exactsol, int i
     bc->SetForcingFunctionBC(exactsol->ExactSolution(),intorder);
     cmesh->InsertMaterialObject(bc);
         
-
     cmesh->SetDefaultOrder(porder);//ordem
 
     cmesh->ApproxSpace().SetAllCreateFunctionsContinuous();
 
     cmesh->AutoBuild();
-
 
     return cmesh;
 }
